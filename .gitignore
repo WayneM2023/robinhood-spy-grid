@@ -1,0 +1,16 @@
+.env
+.env.*
+!.env.example
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+state/
+logs/
+*.log
+events.jsonl
+history.csv
+latest_summary.json
+evaluation.json
+next_experiment_recommendation.json
