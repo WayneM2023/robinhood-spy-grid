@@ -135,7 +135,8 @@ class AsterV3:
             url += "?" + urllib.parse.urlencode(values)
         else:
             data = urllib.parse.urlencode(values).encode()
-        req = urllib.request.Request(url, data=data, method=method, headers={"Content-Type": "application/x-www-form-urlencoded"})
+        headers = {"Content-Type": "application/x-www-form-urlencoded"} if method != "GET" else {}
+        req = urllib.request.Request(url, data=data, method=method, headers=headers)
         try:
             with urllib.request.urlopen(req, timeout=15) as response:
                 return json.loads(response.read())
@@ -206,7 +207,8 @@ def preflight(cfg: Config, client: AsterV3) -> dict[str, Any]:
 
 
 def live_once(cfg: Config, client: AsterV3) -> dict[str, Any]:
-    if cfg.dry_run or cfg.live_confirm != "ASTER_LIVE_ONCE_100_USD":
+    expected_confirm = f"ASTER_LIVE_ONCE_{format(cfg.notional, 'f')}_USD"
+    if cfg.dry_run or cfg.live_confirm != expected_confirm:
         raise RuntimeError("live execution locked; keep DRY_RUN=true until explicitly approved")
     status = preflight(cfg, client)
     if not status["single_asset_mode"] or not status["one_way_mode"]:
@@ -219,8 +221,8 @@ def live_once(cfg: Config, client: AsterV3) -> dict[str, Any]:
         raise RuntimeError("insufficient available USD1 for the hard-capped first cycle")
     if dec(status["taker_fee"] or "0") * Decimal("10000") > cfg.max_taker_fee_bps:
         raise RuntimeError("account taker fee exceeds MAX_TAKER_FEE_BPS")
-    if cfg.notional != Decimal("100"):
-        raise RuntimeError("first live cycle is hard-capped at exactly 100 USD")
+    if cfg.notional > Decimal("100"):
+        raise RuntimeError("first live cycle is hard-capped at 100 USD")
     tick, step = symbol_rules(client, cfg.symbol)
     book = client.public("/fapi/v3/depth", {"symbol": cfg.symbol, "limit": 5})
     maker_price = dec(book["bids"][0][0] if cfg.maker_side == "BUY" else book["asks"][0][0])
