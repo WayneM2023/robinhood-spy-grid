@@ -117,9 +117,13 @@ class AsterV3:
         return str(self._last_nonce)
 
     def _request(self, method: str, path: str, params: dict[str, Any] | None = None) -> Any:
+        # Aster's official V3 example signs parameters in insertion order,
+        # followed by nonce and signer. The API wallet is already bound to the
+        # main user account, so ordinary TRADE/USER_DATA calls do not include
+        # user in the signed payload.
         values = {k: str(v) for k, v in (params or {}).items()}
-        values.update({"nonce": self._nonce(), "user": self.cfg.user, "signer": self.cfg.signer})
-        message = urllib.parse.urlencode(sorted(values.items()))
+        values.update({"nonce": self._nonce(), "signer": self.cfg.signer})
+        message = urllib.parse.urlencode(values)
         typed = {"types": TYPES, "primaryType": "Message", "domain": DOMAIN, "message": {"msg": message}}
         signed = Account.sign_message(encode_typed_data(full_message=typed), self.cfg.private_key)
         values["signature"] = signed.signature.hex()
