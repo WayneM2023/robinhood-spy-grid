@@ -25,6 +25,7 @@ class AsterMakerTakerTests(unittest.TestCase):
         self.assertTrue(cfg.dry_run)
         self.assertEqual(cfg.live_confirm, "")
         self.assertEqual(cfg.symbol, "XAUUSD1")
+        self.assertEqual(cfg.max_taker_fee_bps, Decimal("1"))
 
 
 if __name__ == "__main__":

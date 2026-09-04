@@ -61,6 +61,7 @@ class Config:
     notional: Decimal
     max_net: Decimal
     max_slippage_bps: Decimal
+    max_taker_fee_bps: Decimal
     maker_timeout_seconds: int
     poll_seconds: float
     dry_run: bool
@@ -79,6 +80,7 @@ class Config:
             notional=dec(os.getenv("ORDER_NOTIONAL_USD", "100")),
             max_net=dec(os.getenv("MAX_NET_POSITION_USD", "150")),
             max_slippage_bps=dec(os.getenv("MAX_SLIPPAGE_BPS", "10")),
+            max_taker_fee_bps=dec(os.getenv("MAX_TAKER_FEE_BPS", "1")),
             maker_timeout_seconds=int(os.getenv("MAKER_TIMEOUT_SECONDS", "120")),
             poll_seconds=float(os.getenv("POLL_SECONDS", "0.5")),
             dry_run=env_bool("DRY_RUN", True),
@@ -176,6 +178,7 @@ def preflight(cfg: Config, client: AsterV3) -> dict[str, Any]:
     mode = client.get("/fapi/v3/multiAssetsMargin")
     position_mode = client.get("/fapi/v3/positionSide/dual")
     balances = client.get("/fapi/v3/balance")
+    account = client.get("/fapi/v3/account")
     positions = client.get("/fapi/v3/positionRisk", {"symbol": cfg.symbol})
     orders = client.get("/fapi/v3/openOrders", {"symbol": cfg.symbol})
     commission = client.get("/fapi/v3/commissionRate", {"symbol": cfg.symbol})
@@ -190,6 +193,7 @@ def preflight(cfg: Config, client: AsterV3) -> dict[str, Any]:
         "one_way_mode": not bool(position_mode.get("dualSidePosition")),
         "usd1_balance": usd1.get("balance"),
         "usd1_available": usd1.get("availableBalance"),
+        "can_trade": bool(account.get("canTrade")),
         "maker_fee": commission.get("makerCommissionRate"),
         "taker_fee": commission.get("takerCommissionRate"),
         "open_orders": len(orders),
@@ -207,8 +211,14 @@ def live_once(cfg: Config, client: AsterV3) -> dict[str, Any]:
     status = preflight(cfg, client)
     if not status["single_asset_mode"] or not status["one_way_mode"]:
         raise RuntimeError("requires Single-Asset Mode and One-way Mode")
+    if not status["can_trade"]:
+        raise RuntimeError("Aster account is not permitted to trade")
     if status["open_orders"] or status["nonzero_symbol_positions"]:
         raise RuntimeError("requires zero open XAU orders and zero XAU position")
+    if dec(status["usd1_available"] or "0") < cfg.notional:
+        raise RuntimeError("insufficient available USD1 for the hard-capped first cycle")
+    if dec(status["taker_fee"] or "0") * Decimal("10000") > cfg.max_taker_fee_bps:
+        raise RuntimeError("account taker fee exceeds MAX_TAKER_FEE_BPS")
     if cfg.notional != Decimal("100"):
         raise RuntimeError("first live cycle is hard-capped at exactly 100 USD")
     tick, step = symbol_rules(client, cfg.symbol)
