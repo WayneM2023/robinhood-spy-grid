@@ -9,6 +9,7 @@ environment and are never logged.
 from __future__ import annotations
 
 import argparse
+import http.client
 import json
 import os
 import time
@@ -112,6 +113,7 @@ class AsterV3:
     def __init__(self, cfg: Config):
         self.cfg = cfg
         self._last_nonce = 0
+        self._public_cache: dict[str, Any] = {}
 
     def _nonce(self) -> str:
         current = time.time_ns() // 1000
@@ -146,8 +148,22 @@ class AsterV3:
 
     def public(self, path: str, params: dict[str, Any] | None = None) -> Any:
         query = "?" + urllib.parse.urlencode(params) if params else ""
-        with urllib.request.urlopen(self.cfg.base_url + path + query, timeout=15) as response:
-            return json.loads(response.read())
+        cache_key = path + query
+        if path == "/fapi/v3/exchangeInfo" and cache_key in self._public_cache:
+            return self._public_cache[cache_key]
+        last_error: Exception | None = None
+        for attempt in range(3):
+            try:
+                with urllib.request.urlopen(self.cfg.base_url + path + query, timeout=15) as response:
+                    result = json.loads(response.read())
+                if path == "/fapi/v3/exchangeInfo":
+                    self._public_cache[cache_key] = result
+                return result
+            except (TimeoutError, urllib.error.URLError, http.client.IncompleteRead) as exc:
+                last_error = exc
+                if attempt < 2:
+                    time.sleep(1 + attempt)
+        raise RuntimeError(f"Aster public API failed after 3 attempts: {last_error}")
 
     def get(self, path: str, params: dict[str, Any] | None = None) -> Any:
         return self._request("GET", path, params)
