@@ -186,6 +186,15 @@ def floor_step(value: Decimal, step: Decimal) -> Decimal:
     return (value / step).to_integral_value(rounding=ROUND_DOWN) * step
 
 
+def improved_maker_price(
+    bid: Decimal, ask: Decimal, tick: Decimal, side: str, improve_ticks: int
+) -> Decimal:
+    improve = max(improve_ticks, 0) * tick
+    if side == "BUY":
+        return min(bid + improve, ask - tick)
+    return max(ask - improve, bid + tick)
+
+
 def nonzero_positions(rows: list[dict[str, Any]], symbol: str | None = None) -> list[dict[str, Any]]:
     return [r for r in rows if dec(r.get("positionAmt", "0")) != ZERO and (symbol is None or r.get("symbol") == symbol)]
 
@@ -242,7 +251,9 @@ def live_once(cfg: Config, client: AsterV3) -> dict[str, Any]:
         raise RuntimeError(f"live cycle exceeds MAX_LIVE_CYCLE_USD={max_live_cycle}")
     tick, step = symbol_rules(client, cfg.symbol)
     book = client.public("/fapi/v3/depth", {"symbol": cfg.symbol, "limit": 5})
-    maker_price = dec(book["bids"][0][0] if cfg.maker_side == "BUY" else book["asks"][0][0])
+    bid, ask = dec(book["bids"][0][0]), dec(book["asks"][0][0])
+    improve_ticks = int(os.getenv("MAKER_IMPROVE_TICKS", "0"))
+    maker_price = improved_maker_price(bid, ask, tick, cfg.maker_side, improve_ticks)
     maker_price = floor_step(maker_price, tick)
     qty = floor_step(cfg.notional / maker_price, step)
     if qty <= ZERO:

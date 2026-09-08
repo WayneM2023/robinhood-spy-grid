@@ -3,12 +3,22 @@ import unittest
 from decimal import Decimal
 from unittest.mock import patch
 
-from aster_maker_taker import Config, floor_step, nonzero_positions
+from aster_maker_taker import Config, floor_step, improved_maker_price, nonzero_positions
 
 
 class AsterMakerTakerTests(unittest.TestCase):
     def test_floor_step(self):
         self.assertEqual(floor_step(Decimal("1.239"), Decimal("0.01")), Decimal("1.23"))
+
+    def test_improved_maker_price_stays_post_only(self):
+        self.assertEqual(
+            improved_maker_price(Decimal("100.00"), Decimal("100.04"), Decimal("0.01"), "BUY", 2),
+            Decimal("100.02"),
+        )
+        self.assertEqual(
+            improved_maker_price(Decimal("100.00"), Decimal("100.01"), Decimal("0.01"), "BUY", 2),
+            Decimal("100.00"),
+        )
 
     def test_nonzero_positions(self):
         rows = [{"symbol": "XAUUSD1", "positionAmt": "0"}, {"symbol": "XAUUSD1", "positionAmt": "0.02"}]
