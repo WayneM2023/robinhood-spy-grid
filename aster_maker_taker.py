@@ -276,7 +276,19 @@ def live_once(cfg: Config, client: AsterV3) -> dict[str, Any]:
     remaining = nonzero_positions(final_positions, cfg.symbol)
     if remaining:
         raise RuntimeError("CRITICAL: live cycle did not finish flat")
-    return {"symbol": cfg.symbol, "maker_order_id": order_id, "maker_status": current.get("status"), "maker_filled_qty": str(filled), "hedge_order_id": hedge.get("orderId") if hedge else None, "final_flat": True}
+    return {
+        "symbol": cfg.symbol,
+        "maker_order_id": order_id,
+        "maker_status": current.get("status"),
+        "maker_filled_qty": str(filled),
+        "hedge_order_id": hedge.get("orderId") if hedge else None,
+        "hedge_quote_qty": str(
+            (hedge or {}).get("cumQuote")
+            or (hedge or {}).get("cummulativeQuoteQty")
+            or "0"
+        ),
+        "final_flat": True,
+    }
 
 
 def main() -> None:

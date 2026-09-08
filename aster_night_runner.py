@@ -42,11 +42,14 @@ def main() -> None:
     interval = int(os.getenv("NIGHT_INTERVAL_SECONDS", "1800"))
     max_spread = dec(os.getenv("NIGHT_MAX_SPREAD_BPS", "0.20"))
     max_loss = dec(os.getenv("NIGHT_MAX_LOSS_USD", "0.10"))
+    volume_target = dec(os.getenv("VOLUME_TARGET_USD", "0"))
+    cumulative_volume = dec(os.getenv("VOLUME_BASELINE_USD", "0"))
     stop_epoch = int(os.getenv("NIGHT_STOP_EPOCH", "0"))
     log_path = Path(os.getenv("NIGHT_LOG", "/var/log/aster-maker-taker/night.jsonl"))
     start_balance = available_balance(client)
     emit(log_path, {"event": "start", "symbol": cfg.symbol, "notional": str(cfg.notional),
-                    "start_balance": str(start_balance), "max_cycles": max_cycles})
+                    "start_balance": str(start_balance), "max_cycles": max_cycles,
+                    "volume_baseline": str(cumulative_volume), "volume_target": str(volume_target)})
     completed = 0
     while completed < max_cycles:
         if stop_epoch and time.time() >= stop_epoch:
@@ -57,6 +60,10 @@ def main() -> None:
         if loss >= max_loss:
             emit(log_path, {"event": "stop", "reason": "loss_limit", "loss": str(loss)})
             break
+        if volume_target and cumulative_volume >= volume_target:
+            emit(log_path, {"event": "stop", "reason": "volume_target",
+                            "cumulative_taker_volume": str(cumulative_volume)})
+            break
         spread = spread_bps(client, cfg.symbol)
         if spread > max_spread:
             emit(log_path, {"event": "skip", "reason": "spread", "spread_bps": str(spread)})
@@ -64,12 +71,14 @@ def main() -> None:
             result = live_once(cfg, client)
             after = available_balance(client)
             completed += 1
+            cumulative_volume += dec(result.get("hedge_quote_qty", "0"))
             emit(log_path, {"event": "cycle", "number": completed, "spread_bps": str(spread),
                             "balance": str(after), "loss_from_start": str(max(start_balance-after, Decimal("0"))),
-                            "result": result})
+                            "cumulative_taker_volume": str(cumulative_volume), "result": result})
         if completed < max_cycles:
             time.sleep(interval)
     emit(log_path, {"event": "finish", "completed": completed,
+                    "cumulative_taker_volume": str(cumulative_volume),
                     "final_balance": str(available_balance(client))})
 
 
